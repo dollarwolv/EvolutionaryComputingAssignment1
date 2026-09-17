@@ -2,6 +2,7 @@ from typing import cast
 import copy
 import contextlib
 import numpy as np
+import pandas as pd
 
 from rich.console import Console
 from rich.traceback import install
@@ -89,14 +90,23 @@ parser = argparse.ArgumentParser(
     description="Mutation mode",
 )
 
+# parser.add_argument(
+#     "--adaptive",
+#     type=bool,
+#     default=False,
+#     help="Decreasing mutation rate. Default: Fixed mutation rate (False)",
+# )
+
 parser.add_argument(
     "--adaptive",
-    type=bool,
-    default=False,
-    help="Decreasing mutation rate. Default: Fixed mutation rate (False)",
+    action="store_true",
+    help="Decreasing mutation rate. Default: Fixed mutation rate",
 )
 
+
 args = parser.parse_args()
+
+print("Adaptive:", args.adaptive)
 
 # --- RANDOM GENERATOR SETUP --- #
 # Fix the seed while you are debugging.
@@ -106,10 +116,10 @@ args = parser.parse_args()
 # network's weight initialisation uses torch's own RNG, entirely separate from
 # numpy/random. If you're using "nde", seed all THREE or your runs will not be
 # reproducible across separate script runs, even with the same seed value.
-SEED = 42
-RNG = np.random.default_rng(SEED)
-random.seed(SEED)
-torch.manual_seed(SEED)
+#SEED = 42
+#RNG = np.random.default_rng(SEED)
+#random.seed(SEED)
+#torch.manual_seed(SEED)
 
 # --- DATA SETUP --- #
 SCRIPT_NAME = Path(__file__).stem
@@ -125,9 +135,9 @@ GENOTYPE: GenotypeTypes = "tree"  # "nde" | "tree"
 MODE: ViewerTypes = "frame"  # see show_body() for the options
 SPAWN_POS: list[float] = [0.0, 0.0, 0.1]
 
-NUM_GENERATIONS = 50
-MUTATION_RATES = [i / 100 for i in range(NUM_GENERATIONS, 0, -1)]
-
+NUM_GENERATIONS = 100
+#MUTATION_RATES = [i / 100 for i in range(NUM_GENERATIONS, 0, -1)]
+MUTATION_RATES = np.linspace(0.50, 0.01, NUM_GENERATIONS).tolist()
 
 # ============================================================================ #
 #  1. THE TARGET BODIES
@@ -434,28 +444,136 @@ def survivor_selection(population: Population) -> Population:
         alive_count -= 1
     return population
 
-
 def main():
-    config.target_population_size = 20
-    config.is_maximisation = False
 
-    initial = Population([make_individual() for _ in range(20)])
-    targets = load_targets()
+    NUM_GENERATIONS = 100
+    NUM_RUNS = 5
 
+    config.target_population_size = 50
+    config.is_maximisation = False    
+
+    initial = Population([make_individual() for _ in range(config.target_population_size)])
+
+    targets = load_targets()    
     initial = evaluate(initial, targets)
+    
+    all_results = []
 
-    print(MUTATION_RATES)
+    #initialize first gen and best_so_far variables
+    generation = 0
+    best_so_far = None
 
-    ops: list[EAOperation] = [
-        EAOperation(parent_selection),
-        EAOperation(crossover),
-        EAOperation(mutate),
-        EAOperation(evaluate, targets=targets),
-        EAOperation(survivor_selection),
-    ]
+    #function to set seed for reach run
+    def set_seed(seed):
+        global RNG
+        RNG = np.random.default_rng(seed)
+        random.seed(seed)
+        torch.manual_seed(seed)
 
-    ea = EA(initial, ops, num_steps=NUM_GENERATIONS)
-    ea.run()
+
+    #function to get the stats cuz fuck sgl thign
+    def get_stats(population: Population) -> dict:
+        fitnesses = []
+
+        for ind in population.alive:
+            if ind.fitness_ is not None:
+                fitnesses.append(ind.fitness_)
+
+        return {
+            "best_fitness": min(fitnesses),
+            "mean_fitness": np.mean(fitnesses),
+            "std_fitness": np.std(fitnesses),
+            }
+
+
+    for run in range(NUM_RUNS):
+
+        seed = 67 + run
+        set_seed(seed)
+
+        initial = Population(
+            [make_individual() for _ in range(20)]
+        )
+
+        initial = evaluate(initial, targets)
+
+        this_run = []
+        generation = 0
+        best_so_far = initial.best(
+            sort="min",
+            attribute="fitness_",
+            n=1
+        )[0].fitness_
+
+        initial_stats = get_stats(initial)
+
+        this_run.append({
+            "generation": 0,
+            "best_fitness": initial_stats["best_fitness"],
+            "mean_fitness": initial_stats["mean_fitness"],
+            "std_fitness": initial_stats["std_fitness"],
+            "best_so_far": best_so_far,
+            "mutation_rate": 0.0,
+            "run": run + 1,
+        })
+
+        #logs the stats per run
+        def log_stats(population: Population) -> Population:
+            nonlocal generation, best_so_far
+
+            generation += 1
+
+            stats = get_stats(population)
+
+            best_so_far = min(
+                best_so_far,
+                stats["best_fitness"]
+            )
+            mutation_rate = (
+                MUTATION_RATES[generation - 1]
+                if args.adaptive
+                else 0.2
+            )
+
+            this_run.append({
+                "generation": generation,
+                "best_fitness": stats["best_fitness"],
+                "mean_fitness": stats["mean_fitness"],
+                "std_fitness": stats["std_fitness"],
+                "best_so_far": best_so_far,
+                "mutation_rate": mutation_rate,
+                "run": run + 1,
+            })
+
+            return population
+        
+        ops: list[EAOperation] = [
+            EAOperation(parent_selection),
+            EAOperation(crossover),
+            EAOperation(mutate),
+            EAOperation(evaluate, targets=targets),
+            EAOperation(survivor_selection),
+            EAOperation(log_stats),
+        ]
+
+        ea = EA(
+            initial,
+            ops,
+            num_steps=NUM_GENERATIONS,
+        )
+
+        ea.run()
+
+        all_results.extend(this_run)
+
+
+    df = pd.DataFrame(all_results)
+    df.to_csv("dataset_adaptive.csv", index=False)
+
+    print(df.head())
+    print(df.tail())
+    print(df["mutation_rate"].unique())
+
 
     console.log("--- Results ---")
     console.log(f"best = {ea.get_solution('best', only_alive=False)}")
