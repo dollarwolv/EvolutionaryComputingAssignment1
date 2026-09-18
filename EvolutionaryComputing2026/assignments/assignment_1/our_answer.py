@@ -430,11 +430,7 @@ def pick_mutation_rate(
     elif schedule == "logarithmic":
         progress = math.log1p(x) / math.log1p(n_generations)
     elif schedule == "exponential":
-        # Exponential decay requires both endpoints to be positive.
         return start * (end / start) ** (x / n_generations)
-
-    else:
-        raise ValueError("schedule must be 'linear' or 'logarithmic'.")
 
     return start + (end - start) * progress
 
@@ -556,7 +552,7 @@ def log_stats(
 def main():
 
     NUM_GENERATIONS = 100
-    NUM_RUNS = 5
+    NUM_RUNS = 30
 
     config.target_population_size = 50
     config.is_maximisation = False

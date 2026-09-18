@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import argparse
 from pathlib import Path
 import math
+import re
 
 HERE = Path(__file__).parent
 
@@ -78,7 +79,7 @@ def main():
         min_value = get_best_run()
         value_to_compare = min_value * 1.1
 
-        find_threshold_crossing(value_to_compare)
+        create_averaged_plot(value_to_compare)
 
 
 def pick_mutation_rate(
@@ -121,7 +122,6 @@ def create_plot(plot_type):
     plt.xlabel("Generation")
     plt.ylabel("Best-so-far fitness")
     plt.title(f"{plot_type.capitalize()} Mutation Rate")
-    plt.legend()
     plt.savefig(HERE / "outputs" / f"{plot_type}.png", dpi=300, bbox_inches="tight")
 
 
@@ -147,7 +147,7 @@ def get_best_run():
     return min_value
 
 
-def find_threshold_crossing(threshold: float):
+def create_averaged_plot(threshold: float):
     files = [
         "dataset_exponential.csv",
         "dataset_logarithmic.csv",
@@ -159,16 +159,21 @@ def find_threshold_crossing(threshold: float):
         path = Path("assignments") / "assignment_1" / "outputs" / file
         df = pd.read_csv(path)
 
-        avg_per_generation = df.groupby("generation")["best_so_far"].mean()
+        stats = df.groupby("generation")["best_so_far"].agg(["mean", "std"])
 
-        plt.plot(
-            avg_per_generation.index,  # Generation numbers
-            avg_per_generation.values,  # Average best-so-far fitness
-            label=f"{Path(file).stem}",
+        plot_type = re.search(r"(?<=_)[^.]+(?=\.)", file)
+
+        plt.plot(stats.index, stats["mean"], label=f"{plot_type.group().capitalize()}")
+
+        plt.title("Fittest individual per generation, averaged by run")
+
+        plt.fill_between(
+            stats.index,
+            stats["mean"] - stats["std"],
+            stats["mean"] + stats["std"],
+            alpha=0.2,
+            label=f"{plot_type.group().capitalize()} ±1 standard deviation",
         )
-
-        plt.xlabel("Generation")
-        plt.ylabel("Best-so-far fitness")
 
         plt.legend()
 
