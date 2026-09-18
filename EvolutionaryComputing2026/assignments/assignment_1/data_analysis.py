@@ -4,6 +4,10 @@ import argparse
 from pathlib import Path
 import math
 import re
+from experiment_settings import (
+    NUM_GENERATIONS, FIXED_MUTATION_RATE, START_MUTATION_RATE, END_MUTATION_RATE,
+    THRESHOLD_MULTIPLIER, ZOOM_START_GENERATION, ZOOM_FITNESS_MARGIN,
+)
 
 HERE = Path(__file__).parent
 
@@ -79,17 +83,17 @@ def main():
         create_plot(plot_type)
 
     elif args.plot_mutation_rates:
-        visualize_decrease_schedules(100)
+        visualize_decrease_schedules(NUM_GENERATIONS)
 
     elif args.plot_results:
         min_value = get_best_run()
-        value_to_compare = min_value * 1.1
+        value_to_compare = min_value * THRESHOLD_MULTIPLIER
 
         create_averaged_plot(value_to_compare)
 
     elif args.compare_results:
         min_value = get_best_run()
-        value_to_compare = min_value * 1.1
+        value_to_compare = min_value * THRESHOLD_MULTIPLIER
 
         enabled_args = [name for name, value in vars(args).items() if value is True]
         enabled_args.remove("compare_results")
@@ -102,8 +106,8 @@ def pick_mutation_rate(
     n_generations,
     adaptive=False,
     schedule="linear",
-    start=0.5,
-    end=0.01,
+    start=START_MUTATION_RATE,
+    end=END_MUTATION_RATE,
 ):
     # Without adaptation, the rate stays constant.
     if not adaptive:
@@ -175,11 +179,13 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
     else:
         files = [f"dataset_{s.strip().lower()}.csv" for s in comparison]
 
+    last_generation = 0
     for file in files:
         path = HERE / "outputs" / file
         df = pd.read_csv(path)
 
         stats = df.groupby("generation")["best_so_far"].agg(["mean", "std"])
+        last_generation = max(last_generation, stats.index.max())
 
         plot_type = re.search(r"(?<=_)[^.]+(?=\.)", file)
 
@@ -203,7 +209,7 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
         y=threshold,
         color="red",
         linestyle=":",
-        label=f"Target: {threshold:.2f} (10% above the best value ever reached)",
+        label=f"Target: {threshold:.2f} ({(THRESHOLD_MULTIPLIER - 1) * 100:.0f}% above the best value ever reached)",
     )
 
     plt.legend()
@@ -224,8 +230,9 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
     )
 
     # Save the same curves again, zoomed around the threshold in later generations.
-    plt.xlim(40, 100)
-    plt.ylim(threshold - 0.5, threshold + 0.5)
+    # Use the plotted data's endpoint, so older datasets also display correctly.
+    plt.xlim(min(ZOOM_START_GENERATION, last_generation / 2), last_generation)
+    plt.ylim(threshold - ZOOM_FITNESS_MARGIN, threshold + ZOOM_FITNESS_MARGIN)
     plt.xlabel("Generation")
     plt.ylabel("Mean best-so-far fitness")
     plt.title("Convergence near the threshold (zoomed)")
@@ -246,21 +253,21 @@ def visualize_decrease_schedules(n_generations):
     for schedule in schedules:
         if schedule == "fixed":
             adaptive = False
-            y_values = [0.5 for _ in range(n_generations)]
+            y_values = [FIXED_MUTATION_RATE for _ in range(n_generations + 1)]
         else:
             adaptive = True
             y_values = [
                 pick_mutation_rate(x, n_generations, adaptive, schedule)
-                for x in range(n_generations)
+                for x in range(n_generations + 1)
             ]
 
-        x_values = [x for x in range(n_generations)]
+        x_values = [x for x in range(n_generations + 1)]
         plt.plot(x_values, y_values, label=schedule)
         plt.xlabel("Generation")
         plt.ylabel("Mutation rate")
         plt.legend()
 
-    output_dir = Path("assignments") / "assignment_1" / "outputs" / "averages"
+    output_dir = HERE / "outputs" / "averages"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     plt.savefig(

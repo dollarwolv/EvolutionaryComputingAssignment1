@@ -19,10 +19,18 @@ from ariel.ec import (
 )
 
 from data_analysis import create_plot
+from experiment_settings import (
+    NUM_GENERATIONS, NUM_RUNS, POPULATION_SIZE, BASE_SEED, NUM_MODULES,
+    FIXED_MUTATION_RATE, START_MUTATION_RATE, END_MUTATION_RATE,
+    MUTATION_TYPES, MUTATION_WEIGHTS, ROTATION_MUTATION_RATE,
+    TARGET_DIR, MODE, SPAWN_POS, VIDEO_DURATION,
+)
 
 import math
 
 import argparse
+import subprocess
+import sys
 
 from ariel.ec.genotypes.tree.operators import (
     _prune_invalid_edges,
@@ -95,6 +103,12 @@ parser = argparse.ArgumentParser(
 )
 
 parser.add_argument(
+    "--run-all",
+    action="store_true",
+    help="Run fixed, linear, logarithmic, and exponential mutation experiments",
+)
+
+parser.add_argument(
     "--adaptive",
     action="store_true",
     help="Decreasing mutation rate. Default: Fixed mutation rate",
@@ -121,7 +135,11 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-if args.adaptive and not (args.linear or args.logarithmic or args.exponential):
+if (
+    not args.run_all
+    and args.adaptive
+    and not (args.linear or args.logarithmic or args.exponential)
+):
     raise ValueError(
         "adaptive needs to be provided with another argument: --linear, --logarithmic or --exponential"
     )
@@ -145,17 +163,6 @@ HERE = Path(__file__).parent
 CWD = Path.cwd()
 DATA = CWD / "__data__" / SCRIPT_NAME
 DATA.mkdir(parents=True, exist_ok=True)
-
-# --- EXPERIMENT CONSTANTS --- #
-TARGET_DIR: Path = HERE / "target_bodies"  # the bodies you must approach
-NUM_OF_MODULES: int = 20  # module budget per evolved body
-GENOTYPE: GenotypeTypes = "tree"  # "nde" | "tree"
-MODE: ViewerTypes = "frame"  # see show_body() for the options
-SPAWN_POS: list[float] = [0.0, 0.0, 0.1]
-
-NUM_GENERATIONS = 100
-# MUTATION_RATES = [i / 100 for i in range(NUM_GENERATIONS, 0, -1)]
-MUTATION_RATES = np.linspace(0.50, 0.01, NUM_GENERATIONS).tolist()
 
 # ============================================================================ #
 #  1. THE TARGET BODIES
@@ -211,16 +218,11 @@ def show_body(
         case "video":
             # Mostly useful for showing a body slumping under gravity.
             recorder = VideoRecorder(output_folder=str(DATA / "__videos__"))
-            video_renderer(model, data, duration=5.0, video_recorder=recorder)
+            video_renderer(model, data, duration=VIDEO_DURATION, video_recorder=recorder)
 
 
 install()
 console = Console()
-
-NUM_MODULES = 20
-
-HERE = Path(__file__).parent
-TARGET_DIR: Path = HERE / "target_bodies"  # the bodies you must approach
 
 
 def get_module_count(genome: TreeGenome) -> int:
@@ -377,8 +379,8 @@ def mutate_morphology(genome: TreeGenome) -> TreeGenome:
 
     # Choose mutation type (standard GP mutation operators)
     mutation_type = RNG.choice(
-        ["point", "subtree", "shrink", "hoist"],
-        p=[0.4, 0.4, 0.1, 0.1],
+        MUTATION_TYPES,
+        p=MUTATION_WEIGHTS,
     )
 
     if mutation_type == "point":
@@ -394,8 +396,8 @@ def mutate_morphology(genome: TreeGenome) -> TreeGenome:
         # Hoist mutation: promote child to replace parent
         mutate_hoist(new)
 
-    # Additional rotation mutation (20% chance)
-    if RNG.random() < 0.2:
+    # Additional rotation mutation has its own probability.
+    if RNG.random() < ROTATION_MUTATION_RATE:
         noncore = [nid for nid in new.nodes if nid != IDX_OF_CORE]
         if noncore:
             nid = random.choice(noncore)
@@ -417,8 +419,8 @@ def pick_mutation_rate(
     n_generations,
     adaptive=False,
     schedule="linear",
-    start=0.5,
-    end=0.01,
+    start=START_MUTATION_RATE,
+    end=END_MUTATION_RATE,
 ):
     # Without adaptation, the rate stays constant.
     if not adaptive:
@@ -466,7 +468,7 @@ def mutate(population: Population) -> Population:
                 mutate = True
 
         else:
-            if RNG.random() < 0.5:
+            if RNG.random() < FIXED_MUTATION_RATE:
                 mutate = True
 
         if mutate:
@@ -531,7 +533,8 @@ def log_stats(
         generation,
         NUM_GENERATIONS,
         args.adaptive,
-        0.5 if not args.adaptive else run_type,
+        run_type,
+        start=START_MUTATION_RATE if args.adaptive else FIXED_MUTATION_RATE,
     )
 
     this_run.append(
@@ -550,11 +553,7 @@ def log_stats(
 
 
 def main():
-
-    NUM_GENERATIONS = 100
-    NUM_RUNS = 30
-
-    config.target_population_size = 50
+    config.target_population_size = POPULATION_SIZE
     config.is_maximisation = False
 
     initial = Population(
@@ -571,10 +570,10 @@ def main():
     best_so_far = None
 
     for run in range(NUM_RUNS):
-        seed = 67 + run
+        seed = BASE_SEED + run
         set_seed(seed)
 
-        initial = Population([make_individual() for _ in range(50)])
+        initial = Population([make_individual() for _ in range(POPULATION_SIZE)])
 
         initial = evaluate(initial, targets)
 
@@ -590,7 +589,7 @@ def main():
                 "mean_fitness": initial_stats["mean_fitness"],
                 "std_fitness": initial_stats["std_fitness"],
                 "best_so_far": best_so_far,
-                "mutation_rate": 0.5,
+                "mutation_rate": START_MUTATION_RATE if args.adaptive else FIXED_MUTATION_RATE,
                 "run": run + 1,
             }
         )
@@ -622,4 +621,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if args.run_all:
+        # Separate processes keep each experiment's settings and plots independent.
+        for schedule in ["fixed", "linear", "logarithmic", "exponential"]:
+            print(f"Running {schedule} mutation experiments...", flush=True)
+            command = [sys.executable, str(Path(__file__).resolve())]
+            if schedule != "fixed":
+                command.extend(["--adaptive", f"--{schedule}"])
+            subprocess.run(command, check=True)
+    else:
+        main()
