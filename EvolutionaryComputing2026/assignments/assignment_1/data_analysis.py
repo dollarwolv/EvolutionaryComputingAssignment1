@@ -1,18 +1,220 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import argparse
+from pathlib import Path
+import math
 
-df = pd.read_csv("dataset_fixed.csv")
 
-for run in df["run"].unique():
-    run_data = df[df["run"] == run]
-    plt.plot(
-        run_data["generation"],
-        run_data["best_so_far"],
-        label=f"Run {run}"
+def main():
+
+    parser = argparse.ArgumentParser(
+        description="Plot type",
     )
 
-plt.xlabel("Generation")
-plt.ylabel("Best-so-far fitness")
-plt.title("Fixed Mutation Rate")
-plt.legend()
-plt.savefig("fixed.png", dpi=300, bbox_inches="tight")
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Plot individual runs for the selected mutation schedule",
+    )
+
+    parser.add_argument(
+        "--plot-mutation-rates",
+        action="store_true",
+        help="Plot different mutation rates",
+    )
+
+    parser.add_argument(
+        "--plot-results",
+        action="store_true",
+        help="Plot the average of all runs for each mutation schedule",
+    )
+
+    parser.add_argument(
+        "--fixed",
+        action="store_true",
+        help="Plot fixed mutation rate",
+    )
+
+    parser.add_argument(
+        "--linear",
+        action="store_true",
+        help="Decreasing mutation rate: Linearly decreasing.",
+    )
+
+    parser.add_argument(
+        "--logarithmic",
+        action="store_true",
+        help="Decreasing mutation rate: Logarithmically decreasing.",
+    )
+
+    parser.add_argument(
+        "--exponential",
+        action="store_true",
+        help="Decreasing mutation rate: Exponentially decreasing.",
+    )
+
+    args = parser.parse_args()
+
+    if args.plot:
+        plot_type = None
+
+        if args.fixed:
+            plot_type = "fixed"
+        elif args.linear:
+            plot_type = "linear"
+        elif args.logarithmic:
+            plot_type = "logarithmic"
+        elif args.exponential:
+            plot_type = "exponential"
+
+        create_plot(plot_type)
+
+    elif args.plot_mutation_rates:
+        visualize_decrease_schedules(100)
+
+    elif args.plot_results:
+        min_value = get_best_run()
+        value_to_compare = min_value * 1.1
+
+        find_threshold_crossing(value_to_compare)
+
+
+def pick_mutation_rate(
+    x,
+    n_generations,
+    adaptive=False,
+    schedule="linear",
+    start=0.5,
+    end=0.01,
+):
+    # Without adaptation, the rate stays constant.
+    if not adaptive:
+        return start
+
+    # With adaptation, choose how the rate decreases.
+    if schedule == "linear":
+        progress = x / n_generations
+    elif schedule == "logarithmic":
+        progress = math.log1p(x) / math.log1p(n_generations)
+    elif schedule == "exponential":
+        # Exponential decay requires both endpoints to be positive.
+        return start * (end / start) ** (x / n_generations)
+
+    else:
+        raise ValueError("schedule must be 'linear' or 'logarithmic'.")
+
+    return start + (end - start) * progress
+
+
+def create_plot(plot_type):
+    if not plot_type:
+        raise ValueError("no plot type given")
+
+    df = pd.read_csv(f"dataset_{plot_type}.csv")
+
+    for run in df["run"].unique():
+        run_data = df[df["run"] == run]
+        plt.plot(run_data["generation"], run_data["best_so_far"], label=f"Run {run}")
+
+    plt.xlabel("Generation")
+    plt.ylabel("Best-so-far fitness")
+    plt.title(f"{plot_type.capitalize()} Mutation Rate")
+    plt.legend()
+    plt.savefig(f"{plot_type}.png", dpi=300, bbox_inches="tight")
+
+
+def get_best_run():
+    files = [
+        "dataset_exponential.csv",
+        "dataset_logarithmic.csv",
+        "dataset_linear.csv",
+        "dataset_fixed.csv",
+    ]
+
+    dataframes = []
+
+    for file in files:
+        path = Path("assignments") / "assignment_1" / "outputs" / file
+        df = pd.read_csv(path)
+        dataframes.append(df)
+
+    big_df = pd.concat(dataframes, ignore_index=True)
+
+    min_value = big_df["best_so_far"].min()
+
+    return min_value
+
+
+def find_threshold_crossing(threshold: float):
+    files = [
+        "dataset_exponential.csv",
+        "dataset_logarithmic.csv",
+        "dataset_linear.csv",
+        "dataset_fixed.csv",
+    ]
+
+    for file in files:
+        path = Path("assignments") / "assignment_1" / "outputs" / file
+        df = pd.read_csv(path)
+
+        avg_per_generation = df.groupby("generation")["best_so_far"].mean()
+
+        plt.plot(
+            avg_per_generation.index,  # Generation numbers
+            avg_per_generation.values,  # Average best-so-far fitness
+            label=f"{Path(file).stem}",
+        )
+
+        plt.xlabel("Generation")
+        plt.ylabel("Best-so-far fitness")
+
+        plt.legend()
+
+    plt.axhline(
+        y=threshold, color="red", linestyle=":", label=f"Target: {threshold:.2f}"
+    )
+
+    # Create the output folder if it does not exist.
+    output_dir = Path("assignments") / "assignment_1" / "outputs" / "averages"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    plt.savefig(
+        output_dir / "average_best_runs.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+
+def visualize_decrease_schedules(n_generations):
+
+    schedules = ["exponential", "logarithmic", "linear", "fixed"]
+
+    for schedule in schedules:
+        if schedule == "fixed":
+            adaptive = False
+            y_values = [0.5 for _ in range(n_generations)]
+        else:
+            adaptive = True
+            y_values = [
+                pick_mutation_rate(x, n_generations, adaptive, schedule)
+                for x in range(n_generations)
+            ]
+
+        x_values = [x for x in range(n_generations)]
+        plt.plot(x_values, y_values, label=schedule)
+        plt.xlabel("Generation")
+        plt.ylabel("Mutation rate")
+        plt.legend()
+
+    output_dir = Path("assignments") / "assignment_1" / "outputs" / "averages"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    plt.savefig(
+        output_dir / "mutation_rates.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+
+if __name__ == "__main__":
+    main()

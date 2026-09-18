@@ -18,6 +18,10 @@ from ariel.ec import (
     config,
 )
 
+from data_analysis import create_plot
+
+import math
+
 import argparse
 
 from ariel.ec.genotypes.tree.operators import (
@@ -103,8 +107,37 @@ parser.add_argument(
     help="Decreasing mutation rate. Default: Fixed mutation rate",
 )
 
+parser.add_argument(
+    "--linear",
+    action="store_true",
+    help="Decreasing mutation rate: Linearly decreasing.",
+)
+
+parser.add_argument(
+    "--logarithmic",
+    action="store_true",
+    help="Decreasing mutation rate: Logarithmically decreasing.",
+)
+
+parser.add_argument(
+    "--exponential",
+    action="store_true",
+    help="Decreasing mutation rate: Exponentially decreasing.",
+)
+
 
 args = parser.parse_args()
+
+run_type = None
+
+if not args.adaptive:
+    run_type = "fixed"
+elif args.linear:
+    run_type = "linear"
+elif args.logarithmic:
+    run_type = "logarithmic"
+elif args.exponential:
+    run_type = "exponential"
 
 print("Adaptive:", args.adaptive)
 
@@ -116,10 +149,10 @@ print("Adaptive:", args.adaptive)
 # network's weight initialisation uses torch's own RNG, entirely separate from
 # numpy/random. If you're using "nde", seed all THREE or your runs will not be
 # reproducible across separate script runs, even with the same seed value.
-#SEED = 42
-#RNG = np.random.default_rng(SEED)
-#random.seed(SEED)
-#torch.manual_seed(SEED)
+# SEED = 42
+# RNG = np.random.default_rng(SEED)
+# random.seed(SEED)
+# torch.manual_seed(SEED)
 
 # --- DATA SETUP --- #
 SCRIPT_NAME = Path(__file__).stem
@@ -136,7 +169,7 @@ MODE: ViewerTypes = "frame"  # see show_body() for the options
 SPAWN_POS: list[float] = [0.0, 0.0, 0.1]
 
 NUM_GENERATIONS = 100
-#MUTATION_RATES = [i / 100 for i in range(NUM_GENERATIONS, 0, -1)]
+# MUTATION_RATES = [i / 100 for i in range(NUM_GENERATIONS, 0, -1)]
 MUTATION_RATES = np.linspace(0.50, 0.01, NUM_GENERATIONS).tolist()
 
 # ============================================================================ #
@@ -398,26 +431,66 @@ def mutate_morphology(genome: TreeGenome) -> TreeGenome:
     return new
 
 
+def pick_mutation_rate(
+    x,
+    n_generations,
+    adaptive=False,
+    schedule="linear",
+    start=0.5,
+    end=0.01,
+):
+    # Without adaptation, the rate stays constant.
+    if not adaptive:
+        return start
+
+    # With adaptation, choose how the rate decreases.
+    if schedule == "linear":
+        progress = x / n_generations
+    elif schedule == "logarithmic":
+        progress = math.log1p(x) / math.log1p(n_generations)
+    elif schedule == "exponential":
+        # Exponential decay requires both endpoints to be positive.
+        return start * (end / start) ** (x / n_generations)
+
+    else:
+        raise ValueError("schedule must be 'linear' or 'logarithmic'.")
+
+    return start + (end - start) * progress
+
+
 def mutate(population: Population) -> Population:
     for ind in population.where(lambda ind: bool(ind.tags.get("mutate", False))):
 
         mutate = False
 
+        # find the current generation by looping through the individuals
+        # and taking max time of death + 1
+        n_generation = max(ind.time_of_death for ind in population) + 1
+
         if args.adaptive:
             ind.tags["adaptive_mutation"] = True
 
-            # find the current generation by looping through the individuals
-            # and taking max time of death + 1
-            n_generation = max(ind.time_of_death for ind in population) + 1
+            if args.linear:
+                mutation_rate = pick_mutation_rate(
+                    n_generation, NUM_GENERATIONS, True, "linear"
+                )
 
-            mutation_rate = MUTATION_RATES[n_generation - 1]
+            elif args.logarithmic:
+                mutation_rate = pick_mutation_rate(
+                    n_generation, NUM_GENERATIONS, True, "logarithmic"
+                )
+
+            elif args.exponential:
+                mutation_rate = pick_mutation_rate(
+                    n_generation, NUM_GENERATIONS, True, "exponential"
+                )
 
             if RNG.random() < mutation_rate:
                 mutate = True
                 print(f"mutated: {mutate} at rate {mutation_rate}")
 
         else:
-            if RNG.random() < 0.2:
+            if RNG.random() < 0.5:
                 mutate = True
 
         if mutate:
@@ -444,34 +517,36 @@ def survivor_selection(population: Population) -> Population:
         alive_count -= 1
     return population
 
+
 def main():
 
     NUM_GENERATIONS = 100
     NUM_RUNS = 5
 
     config.target_population_size = 50
-    config.is_maximisation = False    
+    config.is_maximisation = False
 
-    initial = Population([make_individual() for _ in range(config.target_population_size)])
+    initial = Population(
+        [make_individual() for _ in range(config.target_population_size)]
+    )
 
-    targets = load_targets()    
+    targets = load_targets()
     initial = evaluate(initial, targets)
-    
+
     all_results = []
 
-    #initialize first gen and best_so_far variables
+    # initialize first gen and best_so_far variables
     generation = 0
     best_so_far = None
 
-    #function to set seed for reach run
+    # function to set seed for reach run
     def set_seed(seed):
         global RNG
         RNG = np.random.default_rng(seed)
         random.seed(seed)
         torch.manual_seed(seed)
 
-
-    #function to get the stats cuz fuck sgl thign
+    # function to get the stats cuz fuck sgl thign
     def get_stats(population: Population) -> dict:
         fitnesses = []
 
@@ -483,41 +558,36 @@ def main():
             "best_fitness": min(fitnesses),
             "mean_fitness": np.mean(fitnesses),
             "std_fitness": np.std(fitnesses),
-            }
-
+        }
 
     for run in range(NUM_RUNS):
 
         seed = 67 + run
         set_seed(seed)
 
-        initial = Population(
-            [make_individual() for _ in range(20)]
-        )
+        initial = Population([make_individual() for _ in range(20)])
 
         initial = evaluate(initial, targets)
 
         this_run = []
         generation = 0
-        best_so_far = initial.best(
-            sort="min",
-            attribute="fitness_",
-            n=1
-        )[0].fitness_
+        best_so_far = initial.best(sort="min", attribute="fitness_", n=1)[0].fitness_
 
         initial_stats = get_stats(initial)
 
-        this_run.append({
-            "generation": 0,
-            "best_fitness": initial_stats["best_fitness"],
-            "mean_fitness": initial_stats["mean_fitness"],
-            "std_fitness": initial_stats["std_fitness"],
-            "best_so_far": best_so_far,
-            "mutation_rate": 0.0,
-            "run": run + 1,
-        })
+        this_run.append(
+            {
+                "generation": 0,
+                "best_fitness": initial_stats["best_fitness"],
+                "mean_fitness": initial_stats["mean_fitness"],
+                "std_fitness": initial_stats["std_fitness"],
+                "best_so_far": best_so_far,
+                "mutation_rate": 0.0,
+                "run": run + 1,
+            }
+        )
 
-        #logs the stats per run
+        # logs the stats per run
         def log_stats(population: Population) -> Population:
             nonlocal generation, best_so_far
 
@@ -525,28 +595,23 @@ def main():
 
             stats = get_stats(population)
 
-            best_so_far = min(
-                best_so_far,
-                stats["best_fitness"]
-            )
-            mutation_rate = (
-                MUTATION_RATES[generation - 1]
-                if args.adaptive
-                else 0.2
-            )
+            best_so_far = min(best_so_far, stats["best_fitness"])
+            mutation_rate = MUTATION_RATES[generation - 1] if args.adaptive else 0.2
 
-            this_run.append({
-                "generation": generation,
-                "best_fitness": stats["best_fitness"],
-                "mean_fitness": stats["mean_fitness"],
-                "std_fitness": stats["std_fitness"],
-                "best_so_far": best_so_far,
-                "mutation_rate": mutation_rate,
-                "run": run + 1,
-            })
+            this_run.append(
+                {
+                    "generation": generation,
+                    "best_fitness": stats["best_fitness"],
+                    "mean_fitness": stats["mean_fitness"],
+                    "std_fitness": stats["std_fitness"],
+                    "best_so_far": best_so_far,
+                    "mutation_rate": mutation_rate,
+                    "run": run + 1,
+                }
+            )
 
             return population
-        
+
         ops: list[EAOperation] = [
             EAOperation(parent_selection),
             EAOperation(crossover),
@@ -566,14 +631,12 @@ def main():
 
         all_results.extend(this_run)
 
-
     df = pd.DataFrame(all_results)
-    df.to_csv("dataset_adaptive.csv", index=False)
+    df.to_csv(f"dataset_{run_type}.csv", index=False)
 
     print(df.head())
     print(df.tail())
     print(df["mutation_rate"].unique())
-
 
     console.log("--- Results ---")
     console.log(f"best = {ea.get_solution('best', only_alive=False)}")
@@ -587,6 +650,8 @@ def main():
 
     sampled_best = db_pop.sample(30).best(sort="max", attribute="fitness_", n=5)
     console.log(f"sample(30).best(n=5) = {sampled_best}")
+
+    create_plot(run_type)
 
     return
 
