@@ -5,8 +5,13 @@ from pathlib import Path
 import math
 import re
 from experiment_settings import (
-    NUM_GENERATIONS, FIXED_MUTATION_RATE, START_MUTATION_RATE, END_MUTATION_RATE,
-    THRESHOLD_MULTIPLIER, ZOOM_START_GENERATION, ZOOM_FITNESS_MARGIN,
+    NUM_GENERATIONS,
+    FIXED_MUTATION_RATE,
+    START_MUTATION_RATE,
+    END_MUTATION_RATE,
+    THRESHOLD_MULTIPLIER,
+    ZOOM_START_GENERATION,
+    ZOOM_FITNESS_MARGIN,
 )
 
 HERE = Path(__file__).parent
@@ -180,6 +185,7 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
         files = [f"dataset_{s.strip().lower()}.csv" for s in comparison]
 
     last_generation = 0
+    crossings = {}
     for file in files:
         path = HERE / "outputs" / file
         df = pd.read_csv(path)
@@ -188,6 +194,11 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
         last_generation = max(last_generation, stats.index.max())
 
         plot_type = re.search(r"(?<=_)[^.]+(?=\.)", file)
+        # Find where the average curve first reaches the shared threshold.
+        reached = stats[stats["mean"] <= threshold]
+        crossings[plot_type.group().capitalize()] = (
+            int(reached.index[0]) if not reached.empty else None
+        )
 
         plt.plot(stats.index, stats["mean"], label=f"{plot_type.group().capitalize()}")
 
@@ -244,6 +255,51 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
     )
     plt.savefig(output_dir / f"{zoom_name}.png", dpi=300, bbox_inches="tight")
     plt.close()
+
+    create_threshold_bar_plot(
+        crossings,
+        threshold,
+        output_dir / f"{zoom_name.replace('_zoomed', '')}_threshold.png",
+    )
+
+
+def create_threshold_bar_plot(crossings: dict, threshold: float, output_path: Path):
+    fig, ax = plt.subplots()
+
+    crossings = dict(
+        sorted(
+            crossings.items(),
+            key=lambda item: float("inf") if item[1] is None else item[1],
+        )
+    )
+
+    for position, (schedule, generation) in enumerate(crossings.items()):
+        if generation is None:
+            # Leave no bar rather than inventing a crossing time.
+            ax.text(
+                position,
+                0.03,
+                "Not reached",
+                ha="center",
+                transform=ax.get_xaxis_transform(),
+            )
+        else:
+            ax.bar(position, generation, color=f"C{position}")
+            ax.annotate(
+                str(generation),
+                (position, generation),
+                xytext=(0, 4),
+                textcoords="offset points",
+                ha="center",
+            )
+    ax.set_xticks(range(len(crossings)), labels=list(crossings))
+    ax.set_xlim(-0.5, len(crossings) - 0.5)
+    highest = max((g for g in crossings.values() if g is not None), default=0)
+    ax.set_ylim(0, max(1, highest) * 1.15)
+    ax.set_ylabel("First generation at or below threshold")
+    ax.set_title(f"Average best-so-far fitness reaches {threshold:.3f}")
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 
 def visualize_decrease_schedules(n_generations):
