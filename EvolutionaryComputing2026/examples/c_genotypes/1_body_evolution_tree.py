@@ -142,9 +142,7 @@ def is_connected_tree(genome: TreeGenome) -> bool:
         node = stack.pop()
         reachable.add(node)
         stack.extend(
-            succ
-            for succ in robot_graph.successors(node)
-            if succ not in reachable
+            succ for succ in robot_graph.successors(node) if succ not in reachable
         )
     return len(reachable) == robot_graph.number_of_nodes()
 
@@ -247,7 +245,8 @@ class MorphologyEvolution:
 
         # Choose mutation type (standard GP mutation operators)
         mutation_type = RNG.choice(
-            ["point", "subtree", "shrink", "hoist"], p=[0.4, 0.4, 0.1, 0.1],
+            ["point", "subtree", "shrink", "hoist"],
+            p=[0.4, 0.4, 0.1, 0.1],
         )
 
         if mutation_type == "point":
@@ -281,7 +280,9 @@ class MorphologyEvolution:
         return new
 
     def crossover_morphologies(
-        self, parent1: Individual, parent2: Individual,
+        self,
+        parent1: Individual,
+        parent2: Individual,
     ) -> TreeGenome:
         """One-point crossover for morphologies. Recovers from invalid results."""
         t1 = parent1.genotype
@@ -398,11 +399,13 @@ class MorphologyEvolution:
                 ind.alive = False
 
         # Print statistics
-        avg_fitness = np.mean([
-            ind.fitness_
-            for ind in survivors
-            if ind.fitness_ is not None and ind.fitness_ != float("inf")
-        ])
+        avg_fitness = np.mean(
+            [
+                ind.fitness_
+                for ind in survivors
+                if ind.fitness_ is not None and ind.fitness_ != float("inf")
+            ]
+        )
         min_fitness = min(
             ind.fitness_
             for ind in survivors
@@ -423,9 +426,7 @@ class MorphologyEvolution:
     def evolve(self) -> Individual | None:
         """Run the evolutionary algorithm."""
         console.log("Initializing population...")
-        population = Population([
-            self.create_individual() for _ in range(POP_SIZE)
-        ])
+        population = Population([self.create_individual() for _ in range(POP_SIZE)])
 
         # initial eval
         population = self.evaluate(population)
