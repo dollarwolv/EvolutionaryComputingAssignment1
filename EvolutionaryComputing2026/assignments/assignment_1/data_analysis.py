@@ -151,7 +151,7 @@ def get_best_run():
     dataframes = []
 
     for file in files:
-        path = Path("assignments") / "assignment_1" / "outputs" / file
+        path = HERE / "outputs" / file
         df = pd.read_csv(path)
         dataframes.append(df)
 
@@ -164,7 +164,7 @@ def get_best_run():
 
 def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
 
-    if comparison is False:
+    if not comparison:
         files = [
             "dataset_exponential.csv",
             "dataset_logarithmic.csv",
@@ -176,7 +176,7 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
         files = [f"dataset_{s.strip().lower()}.csv" for s in comparison]
 
     for file in files:
-        path = Path("assignments") / "assignment_1" / "outputs" / file
+        path = HERE / "outputs" / file
         df = pd.read_csv(path)
 
         stats = df.groupby("generation")["best_so_far"].agg(["mean", "std"])
@@ -185,7 +185,7 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
 
         plt.plot(stats.index, stats["mean"], label=f"{plot_type.group().capitalize()}")
 
-        if comparison is False:
+        if not comparison:
             plt.title("Fittest individual per generation, averaged by run")
 
         else:
@@ -200,13 +200,16 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
         )
 
     plt.axhline(
-        y=threshold, color="red", linestyle=":", label=f"Target: {threshold:.2f}"
+        y=threshold,
+        color="red",
+        linestyle=":",
+        label=f"Target: {threshold:.2f} (10% above the best value ever reached)",
     )
 
     plt.legend()
 
     # Create the output folder if it does not exist.
-    output_dir = Path("assignments") / "assignment_1" / "outputs" / "averages"
+    output_dir = HERE / "outputs" / "averages"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     plt.savefig(
@@ -219,6 +222,21 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
         dpi=300,
         bbox_inches="tight",
     )
+
+    # Save the same curves again, zoomed around the threshold in later generations.
+    plt.xlim(40, 100)
+    plt.ylim(threshold - 0.5, threshold + 0.5)
+    plt.xlabel("Generation")
+    plt.ylabel("Mean best-so-far fitness")
+    plt.title("Convergence near the threshold (zoomed)")
+    plt.legend(fontsize=7)
+    zoom_name = (
+        "average_best_runs_zoomed"
+        if not comparison
+        else "comparison_" + "_".join(s.strip().lower() for s in comparison) + "_zoomed"
+    )
+    plt.savefig(output_dir / f"{zoom_name}.png", dpi=300, bbox_inches="tight")
+    plt.close()
 
 
 def visualize_decrease_schedules(n_generations):
