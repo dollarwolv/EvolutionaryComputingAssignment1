@@ -56,6 +56,12 @@ def main():
         help="Decreasing mutation rate: Exponentially decreasing.",
     )
 
+    parser.add_argument(
+        "--compare-results",
+        action="store_true",
+        help="Plot the average of all runs for each mutation schedule",
+    )
+
     args = parser.parse_args()
 
     if args.plot:
@@ -80,6 +86,15 @@ def main():
         value_to_compare = min_value * 1.1
 
         create_averaged_plot(value_to_compare)
+
+    elif args.compare_results:
+        min_value = get_best_run()
+        value_to_compare = min_value * 1.1
+
+        enabled_args = [name for name, value in vars(args).items() if value is True]
+        enabled_args.remove("compare_results")
+
+        create_averaged_plot(value_to_compare, enabled_args)
 
 
 def pick_mutation_rate(
@@ -147,13 +162,18 @@ def get_best_run():
     return min_value
 
 
-def create_averaged_plot(threshold: float):
-    files = [
-        "dataset_exponential.csv",
-        "dataset_logarithmic.csv",
-        "dataset_linear.csv",
-        "dataset_fixed.csv",
-    ]
+def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
+
+    if comparison is False:
+        files = [
+            "dataset_exponential.csv",
+            "dataset_logarithmic.csv",
+            "dataset_linear.csv",
+            "dataset_fixed.csv",
+        ]
+
+    else:
+        files = [f"dataset_{s.strip().lower()}.csv" for s in comparison]
 
     for file in files:
         path = Path("assignments") / "assignment_1" / "outputs" / file
@@ -165,7 +185,11 @@ def create_averaged_plot(threshold: float):
 
         plt.plot(stats.index, stats["mean"], label=f"{plot_type.group().capitalize()}")
 
-        plt.title("Fittest individual per generation, averaged by run")
+        if comparison is False:
+            plt.title("Fittest individual per generation, averaged by run")
+
+        else:
+            plt.title(" vs. ".join(s.strip().capitalize() for s in comparison))
 
         plt.fill_between(
             stats.index,
@@ -175,18 +199,23 @@ def create_averaged_plot(threshold: float):
             label=f"{plot_type.group().capitalize()} ±1 standard deviation",
         )
 
-        plt.legend()
-
     plt.axhline(
         y=threshold, color="red", linestyle=":", label=f"Target: {threshold:.2f}"
     )
+
+    plt.legend()
 
     # Create the output folder if it does not exist.
     output_dir = Path("assignments") / "assignment_1" / "outputs" / "averages"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     plt.savefig(
-        output_dir / "average_best_runs.png",
+        (
+            output_dir / "average_best_runs.png"
+            if not comparison
+            else output_dir
+            / ("comparison_" + "_".join(s.strip().lower() for s in comparison) + ".png")
+        ),
         dpi=300,
         bbox_inches="tight",
     )
