@@ -531,7 +531,12 @@ def log_stats(
 
     stats = get_stats(population)
     best_so_far = min(previous["best_so_far"], stats["best_fitness"])
-    mutation_rate = MUTATION_RATES[generation - 1] if args.adaptive else 0.2
+    mutation_rate = pick_mutation_rate(
+        generation,
+        NUM_GENERATIONS,
+        args.adaptive,
+        0.5 if not args.adaptive else run_type,
+    )
 
     this_run.append(
         {
@@ -573,7 +578,7 @@ def main():
         seed = 67 + run
         set_seed(seed)
 
-        initial = Population([make_individual() for _ in range(20)])
+        initial = Population([make_individual() for _ in range(50)])
 
         initial = evaluate(initial, targets)
 
@@ -589,7 +594,7 @@ def main():
                 "mean_fitness": initial_stats["mean_fitness"],
                 "std_fitness": initial_stats["std_fitness"],
                 "best_so_far": best_so_far,
-                "mutation_rate": 0.0,
+                "mutation_rate": 0.5,
                 "run": run + 1,
             }
         )
