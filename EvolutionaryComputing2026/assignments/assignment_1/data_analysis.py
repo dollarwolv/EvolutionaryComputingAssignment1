@@ -4,6 +4,8 @@ import argparse
 from pathlib import Path
 import math
 
+HERE = Path(__file__).parent
+
 
 def main():
 
@@ -110,7 +112,7 @@ def create_plot(plot_type):
     if not plot_type:
         raise ValueError("no plot type given")
 
-    df = pd.read_csv(f"dataset_{plot_type}.csv")
+    df = pd.read_csv(HERE / "outputs" / f"dataset_{plot_type}.csv")
 
     for run in df["run"].unique():
         run_data = df[df["run"] == run]
@@ -120,7 +122,7 @@ def create_plot(plot_type):
     plt.ylabel("Best-so-far fitness")
     plt.title(f"{plot_type.capitalize()} Mutation Rate")
     plt.legend()
-    plt.savefig(f"{plot_type}.png", dpi=300, bbox_inches="tight")
+    plt.savefig(HERE / "outputs" / f"{plot_type}.png", dpi=300, bbox_inches="tight")
 
 
 def get_best_run():

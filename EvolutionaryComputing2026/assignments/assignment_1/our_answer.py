@@ -94,13 +94,6 @@ parser = argparse.ArgumentParser(
     description="Mutation mode",
 )
 
-# parser.add_argument(
-#     "--adaptive",
-#     type=bool,
-#     default=False,
-#     help="Decreasing mutation rate. Default: Fixed mutation rate (False)",
-# )
-
 parser.add_argument(
     "--adaptive",
     action="store_true",
@@ -128,6 +121,11 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+if args.adaptive and not (args.linear or args.logarithmic or args.exponential):
+    raise ValueError(
+        "adaptive needs to be provided with another argument: --linear, --logarithmic or --exponential"
+    )
+
 run_type = None
 
 if not args.adaptive:
@@ -140,19 +138,6 @@ elif args.exponential:
     run_type = "exponential"
 
 print("Adaptive:", args.adaptive)
-
-# --- RANDOM GENERATOR SETUP --- #
-# Fix the seed while you are debugging.
-# Report results over MULTIPLE seeds.
-# NOTE: the tree operators use the `random` module, the NDE uses numpy for its
-# own genotype vectors AND is a torch.nn.Module for its internal network - that
-# network's weight initialisation uses torch's own RNG, entirely separate from
-# numpy/random. If you're using "nde", seed all THREE or your runs will not be
-# reproducible across separate script runs, even with the same seed value.
-# SEED = 42
-# RNG = np.random.default_rng(SEED)
-# random.seed(SEED)
-# torch.manual_seed(SEED)
 
 # --- DATA SETUP --- #
 SCRIPT_NAME = Path(__file__).stem
@@ -273,10 +258,6 @@ def make_individual() -> Individual:
     ind = Individual()
     ind.genotype = genome.to_dict()
 
-    # pprint.pprint(ind.genotype)
-
-    # ind.tags["ps"] = False
-    # ind.tags["valid"] = True
     return ind
 
 
@@ -487,7 +468,6 @@ def mutate(population: Population) -> Population:
 
             if RNG.random() < mutation_rate:
                 mutate = True
-                print(f"mutated: {mutate} at rate {mutation_rate}")
 
         else:
             if RNG.random() < 0.5:
@@ -518,6 +498,56 @@ def survivor_selection(population: Population) -> Population:
     return population
 
 
+# function to get the stats cuz fuck sgl thign
+def get_stats(population: Population) -> dict:
+    fitnesses = []
+
+    for ind in population.alive:
+        if ind.fitness_ is not None:
+            fitnesses.append(ind.fitness_)
+
+    return {
+        "best_fitness": min(fitnesses),
+        "mean_fitness": np.mean(fitnesses),
+        "std_fitness": np.std(fitnesses),
+    }
+
+
+# function to set seed for reach run
+def set_seed(seed):
+    global RNG
+    RNG = np.random.default_rng(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def log_stats(
+    population: Population,
+    this_run: list,
+    run: int,
+) -> Population:
+    previous = this_run[-1]
+    generation = previous["generation"] + 1
+
+    stats = get_stats(population)
+    best_so_far = min(previous["best_so_far"], stats["best_fitness"])
+    mutation_rate = MUTATION_RATES[generation - 1] if args.adaptive else 0.2
+
+    this_run.append(
+        {
+            "generation": generation,
+            "best_fitness": stats["best_fitness"],
+            "mean_fitness": stats["mean_fitness"],
+            "std_fitness": stats["std_fitness"],
+            "best_so_far": best_so_far,
+            "mutation_rate": mutation_rate,
+            "run": run + 1,
+        }
+    )
+
+    return population
+
+
 def main():
 
     NUM_GENERATIONS = 100
@@ -539,29 +569,7 @@ def main():
     generation = 0
     best_so_far = None
 
-    # function to set seed for reach run
-    def set_seed(seed):
-        global RNG
-        RNG = np.random.default_rng(seed)
-        random.seed(seed)
-        torch.manual_seed(seed)
-
-    # function to get the stats cuz fuck sgl thign
-    def get_stats(population: Population) -> dict:
-        fitnesses = []
-
-        for ind in population.alive:
-            if ind.fitness_ is not None:
-                fitnesses.append(ind.fitness_)
-
-        return {
-            "best_fitness": min(fitnesses),
-            "mean_fitness": np.mean(fitnesses),
-            "std_fitness": np.std(fitnesses),
-        }
-
     for run in range(NUM_RUNS):
-
         seed = 67 + run
         set_seed(seed)
 
@@ -570,7 +578,6 @@ def main():
         initial = evaluate(initial, targets)
 
         this_run = []
-        generation = 0
         best_so_far = initial.best(sort="min", attribute="fitness_", n=1)[0].fitness_
 
         initial_stats = get_stats(initial)
@@ -587,38 +594,13 @@ def main():
             }
         )
 
-        # logs the stats per run
-        def log_stats(population: Population) -> Population:
-            nonlocal generation, best_so_far
-
-            generation += 1
-
-            stats = get_stats(population)
-
-            best_so_far = min(best_so_far, stats["best_fitness"])
-            mutation_rate = MUTATION_RATES[generation - 1] if args.adaptive else 0.2
-
-            this_run.append(
-                {
-                    "generation": generation,
-                    "best_fitness": stats["best_fitness"],
-                    "mean_fitness": stats["mean_fitness"],
-                    "std_fitness": stats["std_fitness"],
-                    "best_so_far": best_so_far,
-                    "mutation_rate": mutation_rate,
-                    "run": run + 1,
-                }
-            )
-
-            return population
-
         ops: list[EAOperation] = [
             EAOperation(parent_selection),
             EAOperation(crossover),
             EAOperation(mutate),
             EAOperation(evaluate, targets=targets),
             EAOperation(survivor_selection),
-            EAOperation(log_stats),
+            EAOperation(log_stats, this_run=this_run, run=run),
         ]
 
         ea = EA(
@@ -632,25 +614,7 @@ def main():
         all_results.extend(this_run)
 
     df = pd.DataFrame(all_results)
-    df.to_csv(f"dataset_{run_type}.csv", index=False)
-
-    print(df.head())
-    print(df.tail())
-    print(df["mutation_rate"].unique())
-
-    console.log("--- Results ---")
-    console.log(f"best = {ea.get_solution('best', only_alive=False)}")
-    console.log(f"median = {ea.get_solution('median', only_alive=False)}")
-    console.log(f"worst = {ea.get_solution('worst', only_alive=False)}")
-
-    # Population API examples
-    db_pop = ea._fetch(only_alive=False)
-    top_10 = db_pop.best(sort="max", attribute="fitness_", n=10)
-    console.log(f"top-10 from DB = {top_10}")
-
-    sampled_best = db_pop.sample(30).best(sort="max", attribute="fitness_", n=5)
-    console.log(f"sample(30).best(n=5) = {sampled_best}")
-
+    df.to_csv(HERE / "outputs" / f"dataset_{run_type}.csv", index=False)
     create_plot(run_type)
 
     return
