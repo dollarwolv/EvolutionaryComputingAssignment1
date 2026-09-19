@@ -13,6 +13,7 @@ from experiment_settings import (
     ZOOM_START_GENERATION,
     ZOOM_FITNESS_MARGIN,
 )
+from lifelines.statistics import multivariate_logrank_test
 
 HERE = Path(__file__).parent
 
@@ -71,7 +72,19 @@ def main():
         help="Plot the average of all runs for each mutation schedule",
     )
 
+    parser.add_argument(
+        "--run-significance-test",
+        action="store_true",
+        help="Plot the average of all runs for each mutation schedule",
+    )
+
     args = parser.parse_args()
+
+    if args.run_significance_test:
+        min_value = get_best_run()
+        value_to_compare = min_value * THRESHOLD_MULTIPLIER
+
+        get_p_values(value_to_compare)
 
     if args.plot:
         plot_type = None
@@ -331,6 +344,55 @@ def visualize_decrease_schedules(n_generations):
         dpi=300,
         bbox_inches="tight",
     )
+
+
+def get_p_values(threshold: float):
+
+    files = [
+        "dataset_exponential.csv",
+        "dataset_logarithmic.csv",
+        "dataset_linear.csv",
+        "dataset_fixed.csv",
+    ]
+
+    # lists that will later be passed into test
+    durations = []
+    groups = []
+    events = []
+
+    for file in files:
+        run_type = re.search(r"(?<=_)[^.]+(?=\.)", file).group()
+
+        df = pd.read_csv(HERE / "outputs" / file)
+        runs = df.groupby("run")
+
+        for i, run in runs:
+            crossed_threshold = run[run["best_so_far"] <= threshold]
+            crossed_threshold_idx = (
+                int(crossed_threshold["generation"].iloc[0])
+                if not crossed_threshold.empty
+                else None
+            )
+
+            groups.append(run_type)
+
+            if crossed_threshold_idx is None:
+                durations.append(NUM_GENERATIONS)
+                events.append(False)
+
+            else:
+                durations.append(crossed_threshold_idx)
+                events.append(True)
+
+    overall_result = multivariate_logrank_test(
+        event_durations=durations,
+        groups=groups,
+        event_observed=events,
+    )
+
+    print(f"Overall result: p = {overall_result.p_value}")
+
+    return overall_result.p_value
 
 
 if __name__ == "__main__":

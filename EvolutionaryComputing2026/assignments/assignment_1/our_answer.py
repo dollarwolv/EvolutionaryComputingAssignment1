@@ -20,10 +20,21 @@ from ariel.ec import (
 
 from data_analysis import create_plot
 from experiment_settings import (
-    NUM_GENERATIONS, NUM_RUNS, POPULATION_SIZE, BASE_SEED, NUM_MODULES,
-    FIXED_MUTATION_RATE, START_MUTATION_RATE, END_MUTATION_RATE,
-    MUTATION_TYPES, MUTATION_WEIGHTS, ROTATION_MUTATION_RATE,
-    TARGET_DIR, MODE, SPAWN_POS, VIDEO_DURATION,
+    NUM_GENERATIONS,
+    NUM_RUNS,
+    POPULATION_SIZE,
+    BASE_SEED,
+    NUM_MODULES,
+    FIXED_MUTATION_RATE,
+    START_MUTATION_RATE,
+    END_MUTATION_RATE,
+    MUTATION_TYPES,
+    MUTATION_WEIGHTS,
+    ROTATION_MUTATION_RATE,
+    TARGET_DIR,
+    MODE,
+    SPAWN_POS,
+    VIDEO_DURATION,
 )
 
 import math
@@ -218,7 +229,9 @@ def show_body(
         case "video":
             # Mostly useful for showing a body slumping under gravity.
             recorder = VideoRecorder(output_folder=str(DATA / "__videos__"))
-            video_renderer(model, data, duration=VIDEO_DURATION, video_recorder=recorder)
+            video_renderer(
+                model, data, duration=VIDEO_DURATION, video_recorder=recorder
+            )
 
 
 install()
@@ -589,7 +602,9 @@ def main():
                 "mean_fitness": initial_stats["mean_fitness"],
                 "std_fitness": initial_stats["std_fitness"],
                 "best_so_far": best_so_far,
-                "mutation_rate": START_MUTATION_RATE if args.adaptive else FIXED_MUTATION_RATE,
+                "mutation_rate": (
+                    START_MUTATION_RATE if args.adaptive else FIXED_MUTATION_RATE
+                ),
                 "run": run + 1,
             }
         )
