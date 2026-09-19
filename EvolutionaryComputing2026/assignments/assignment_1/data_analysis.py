@@ -67,6 +67,12 @@ def main():
     )
 
     parser.add_argument(
+        "--random",
+        action="store_true",
+        help="Random individuals.",
+    )
+
+    parser.add_argument(
         "--compare-results",
         action="store_true",
         help="Plot the average of all runs for each mutation schedule",
@@ -158,7 +164,10 @@ def create_plot(plot_type):
 
     plt.xlabel("Generation")
     plt.ylabel("Best-so-far fitness")
-    plt.title(f"{plot_type.capitalize()} Mutation Rate")
+    if not plot_type == "random":
+        plt.title(f"{plot_type.capitalize()} Mutation Rate")
+    else:
+        plt.title("Generating random individuals for 150 generations")
     plt.savefig(HERE / "outputs" / f"{plot_type}.png", dpi=300, bbox_inches="tight")
 
 
@@ -168,6 +177,7 @@ def get_best_run():
         "dataset_logarithmic.csv",
         "dataset_linear.csv",
         "dataset_fixed.csv",
+        "dataset_random.csv",
     ]
 
     dataframes = []
@@ -192,6 +202,7 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
             "dataset_logarithmic.csv",
             "dataset_linear.csv",
             "dataset_fixed.csv",
+            "dataset_random.csv",
         ]
 
     else:
@@ -332,6 +343,7 @@ def visualize_decrease_schedules(n_generations):
 
         x_values = [x for x in range(n_generations + 1)]
         plt.plot(x_values, y_values, label=schedule)
+        plt.title("Mutation rate used at each generation for each decrease schedule")
         plt.xlabel("Generation")
         plt.ylabel("Mutation rate")
         plt.legend()

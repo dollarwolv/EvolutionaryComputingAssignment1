@@ -143,6 +143,12 @@ parser.add_argument(
     help="Decreasing mutation rate: Exponentially decreasing.",
 )
 
+parser.add_argument(
+    "--random",
+    action="store_true",
+    help="Generate random individuals.",
+)
+
 
 args = parser.parse_args()
 
@@ -157,7 +163,9 @@ if (
 
 run_type = None
 
-if not args.adaptive:
+if args.random and not args.adaptive:
+    run_type = "random"
+elif not args.adaptive:
     run_type = "fixed"
 elif args.linear:
     run_type = "linear"
@@ -167,6 +175,7 @@ elif args.exponential:
     run_type = "exponential"
 
 print("Adaptive:", args.adaptive)
+print("run type: ", run_type)
 
 # --- DATA SETUP --- #
 SCRIPT_NAME = Path(__file__).stem
@@ -565,7 +574,79 @@ def log_stats(
     return population
 
 
+def run_random():
+    config.target_population_size = POPULATION_SIZE
+    config.is_maximisation = False
+
+    targets = load_targets()
+    all_results = []
+
+    for run in range(NUM_RUNS):
+        seed = BASE_SEED + run
+        set_seed(seed)
+
+        initial = Population(
+            [make_individual() for _ in range(config.target_population_size)]
+        )
+
+        evaluation = evaluate(initial, targets)
+
+        best_so_far = evaluation.best(sort="min", attribute="fitness_", n=1)[0].fitness_
+        initial_stats = get_stats(evaluation)
+        all_results.append(
+            {
+                "generation": 0,
+                "best_fitness": initial_stats["best_fitness"],
+                "mean_fitness": initial_stats["mean_fitness"],
+                "std_fitness": initial_stats["std_fitness"],
+                "best_so_far": best_so_far,
+                "run": run + 1,
+            }
+        )
+
+        # The EA selects 25 parents, then uses 12 pairs to create 24 children.
+        selected_parents = POPULATION_SIZE // 2
+        n_new_individuals = selected_parents - selected_parents % 2
+
+        for gen in range(NUM_GENERATIONS):
+            print(f"run {run} gen {gen}")
+            new_children = Population(
+                [make_individual() for _ in range(n_new_individuals)]
+            )
+
+            evaluation = evaluate(new_children, targets)
+
+            best_this_gen = evaluation.best(sort="min", attribute="fitness_", n=1)[
+                0
+            ].fitness_
+
+            # Fitness is minimised, so a smaller value is an improvement.
+            if best_this_gen < best_so_far:
+                best_so_far = best_this_gen
+
+            stats = get_stats(evaluation)
+
+            all_results.append(
+                {
+                    "generation": gen + 1,
+                    "best_fitness": stats["best_fitness"],
+                    "mean_fitness": stats["mean_fitness"],
+                    "std_fitness": stats["std_fitness"],
+                    "best_so_far": best_so_far,
+                    "run": run + 1,
+                }
+            )
+
+    df = pd.DataFrame(all_results)
+    df.to_csv(HERE / "outputs" / f"dataset_{run_type}.csv", index=False)
+    create_plot(run_type)
+
+
 def main():
+    if args.random:
+        run_random()
+        return
+
     config.target_population_size = POPULATION_SIZE
     config.is_maximisation = False
 
@@ -638,15 +719,19 @@ def main():
 if __name__ == "__main__":
     if args.run_all:
         # Separate processes keep each experiment's settings and plots independent.
-        for schedule in ["fixed", "linear", "logarithmic", "exponential"]:
-            print(f"Running {schedule} mutation experiments...", flush=True)
+        for schedule in ["random", "fixed", "linear", "logarithmic", "exponential"]:
+            print(f"Running {schedule} experiment...", flush=True)
             command = [sys.executable, str(Path(__file__).resolve())]
-            if schedule != "fixed":
+            if schedule == "random":
+                command.append("--random")
+            elif schedule != "fixed":
                 command.extend(["--adaptive", f"--{schedule}"])
             subprocess.run(command, check=True)
 
         # All four CSV files now exist, so they can be compared together.
-        print("Creating averaged plots and running the significance test...", flush=True)
+        print(
+            "Creating averaged plots and running the significance test...", flush=True
+        )
         subprocess.run(
             [
                 sys.executable,
