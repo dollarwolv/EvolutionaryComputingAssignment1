@@ -644,5 +644,17 @@ if __name__ == "__main__":
             if schedule != "fixed":
                 command.extend(["--adaptive", f"--{schedule}"])
             subprocess.run(command, check=True)
+
+        # All four CSV files now exist, so they can be compared together.
+        print("Creating averaged plots and running the significance test...", flush=True)
+        subprocess.run(
+            [
+                sys.executable,
+                str(HERE / "data_analysis.py"),
+                "--plot-results",
+                "--run-significance-test",
+            ],
+            check=True,
+        )
     else:
         main()

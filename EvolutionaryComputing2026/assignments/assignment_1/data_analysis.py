@@ -75,7 +75,7 @@ def main():
     parser.add_argument(
         "--run-significance-test",
         action="store_true",
-        help="Plot the average of all runs for each mutation schedule",
+        help="Run the log-rank significance test",
     )
 
     args = parser.parse_args()
