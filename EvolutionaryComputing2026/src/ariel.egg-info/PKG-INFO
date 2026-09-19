@@ -20,6 +20,7 @@ Requires-Dist: ipykernel>=6.30.1
 Requires-Dist: jupyter>=1.1.1
 Requires-Dist: kaleido>=1.2.0
 Requires-Dist: keyboard>=0.13.5
+Requires-Dist: lifelines>=0.30.3
 Requires-Dist: manifold3d>=3.4.0
 Requires-Dist: matplotlib>=3.9.4
 Requires-Dist: mujoco>=3.3.6

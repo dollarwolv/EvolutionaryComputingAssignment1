@@ -6,6 +6,7 @@ ipykernel>=6.30.1
 jupyter>=1.1.1
 kaleido>=1.2.0
 keyboard>=0.13.5
+lifelines>=0.30.3
 manifold3d>=3.4.0
 matplotlib>=3.9.4
 mujoco>=3.3.6
