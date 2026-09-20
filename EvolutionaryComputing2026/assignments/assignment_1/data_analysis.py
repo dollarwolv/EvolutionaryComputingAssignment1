@@ -84,7 +84,16 @@ def main():
         help="Run the log-rank significance test",
     )
 
+    parser.add_argument(
+        "--print-final-population-std",
+        action="store_true",
+        help="Print the mean within-population SD at the final generation",
+    )
+
     args = parser.parse_args()
+
+    if args.print_final_population_std:
+        print_final_population_std()
 
     if args.run_significance_test:
         min_value = get_best_run()
@@ -402,9 +411,24 @@ def get_p_values(threshold: float):
         event_observed=events,
     )
 
-    print(f"Overall result: p = {overall_result.p_value}")
+    print(
+        f"Overall log-rank result: chi-square({overall_result.degrees_of_freedom}) "
+        f"= {overall_result.test_statistic:.2f}, p = {overall_result.p_value:.3f}"
+    )
 
     return overall_result.p_value
+
+
+def print_final_population_std():
+    """Print the final within-population fitness variation for each schedule."""
+    schedules = ["fixed", "linear", "exponential", "logarithmic"]
+
+    print(f"Mean within-population SD at generation {NUM_GENERATIONS}:")
+    for schedule in schedules:
+        df = pd.read_csv(HERE / "outputs" / f"dataset_{schedule}.csv")
+        final_generation = df[df["generation"] == NUM_GENERATIONS]
+        mean_std = final_generation["std_fitness"].mean()
+        print(f"  {schedule.capitalize()}: {mean_std:.3f}")
 
 
 if __name__ == "__main__":

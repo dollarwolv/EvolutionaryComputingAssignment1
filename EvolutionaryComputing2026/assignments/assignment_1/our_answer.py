@@ -518,7 +518,7 @@ def survivor_selection(population: Population) -> Population:
     return population
 
 
-# function to get the stats cuz fuck sgl thign
+# Calculate summary statistics for the current population.
 def get_stats(population: Population) -> dict:
     fitnesses = []
 
@@ -738,6 +738,7 @@ if __name__ == "__main__":
                 str(HERE / "data_analysis.py"),
                 "--plot-results",
                 "--run-significance-test",
+                "--print-final-population-std",
             ],
             check=True,
         )
