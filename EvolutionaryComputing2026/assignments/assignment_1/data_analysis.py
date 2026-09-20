@@ -236,7 +236,7 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
         plt.plot(stats.index, stats["mean"], label=f"{plot_type.group().capitalize()}")
 
         if not comparison:
-            plt.title("Fittest individual per generation, averaged by run")
+            plt.title("Mean best-so-far fitness by generation")
 
         else:
             plt.title(" vs. ".join(s.strip().capitalize() for s in comparison))
@@ -246,17 +246,17 @@ def create_averaged_plot(threshold: float, comparison: None | list[str] = None):
             stats["mean"] - stats["std"],
             stats["mean"] + stats["std"],
             alpha=0.2,
-            label=f"{plot_type.group().capitalize()} ±1 standard deviation",
+            label="_nolegend_",
         )
 
     plt.axhline(
         y=threshold,
         color="red",
         linestyle=":",
-        label=f"Target: {threshold:.2f} ({(THRESHOLD_MULTIPLIER - 1) * 100:.0f}% above the best value ever reached)",
+        label=f"Target: {threshold:.2f}",
     )
 
-    plt.legend()
+    plt.legend(fontsize=8)
 
     # Create the output folder if it does not exist.
     output_dir = HERE / "outputs" / "averages"
